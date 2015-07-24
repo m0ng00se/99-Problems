@@ -4038,4 +4038,4 @@ queens(BoardSize) ->
 %% @end
 %% ========================================== 
 document() ->
-  edoc:run([],["q99.erl"],[]).
+  edoc:run([],["p99.erl"],[]).
