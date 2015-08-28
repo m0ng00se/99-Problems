@@ -221,8 +221,8 @@
       T :: term().
 
 my_last(L) when is_list(L) -> my_last(L, []).
-my_last([H|T],_) -> my_last(T,H);
-my_last([],Acc) -> Acc.
+my_last([H|T], _) -> my_last(T, H);
+my_last([], Acc) -> Acc.
 
 %% =============================================
 %% @doc
@@ -237,9 +237,9 @@ my_last([],Acc) -> Acc.
       List :: [T], 
       T :: term().				   
 
-my_but_last(L) when is_list(L) -> my_but_last(L,[],[]).
-my_but_last([H|T],A,_) -> my_but_last(T,H,A);
-my_but_last([],_,A) -> A.
+my_but_last(L) when is_list(L) -> my_but_last(L, [], []).
+my_but_last([H|T], A, _) -> my_but_last(T, H, A);
+my_but_last([], _, A) -> A.
 
 %% ===========================================
 %% @doc
@@ -258,10 +258,10 @@ my_but_last([],_,A) -> A.
       List :: [T], N :: pos_integer(), 
       T :: term().
 
-element_at(L,N) when is_list(L), is_integer(N), N > 0 -> element_at(L,N,1).
-element_at([H|_],_N,_N) -> H;
-element_at([_|T],N,K) -> element_at(T,N,K+1);
-element_at([],_,_) -> {error, out_of_bounds}.
+element_at(L, N) when is_list(L), is_integer(N), N > 0 -> element_at(L, N, 1).
+element_at([H|_], _N, _N) -> H;
+element_at([_|T], N, K) -> element_at(T, N, K+1);
+element_at([], _, _) -> {error, out_of_bounds}.
 
 %% ===============================================
 %% @doc
@@ -273,7 +273,7 @@ element_at([],_,_) -> {error, out_of_bounds}.
 -spec length(List) -> non_neg_integer() when 
       List :: [T], T :: term().
 
-length(L) when is_list(L) -> length(L,0).
+length(L) when is_list(L) -> length(L, 0).
 length([_|T], Acc) -> length(T, Acc+1);
 length([], Acc) -> Acc.
 
@@ -304,7 +304,7 @@ reverse_no_tail([]) -> [].
 -spec reverse(List) -> List when 
       List :: [T], T :: term().
 
-reverse(L) when is_list(L) -> reverse(L,[]).
+reverse(L) when is_list(L) -> reverse(L, []).
 reverse([H|T], Acc) -> reverse(T, [H|Acc]);
 reverse([], Acc) -> Acc.
 
@@ -344,9 +344,9 @@ palindrome(L) when is_list(L) ->
       DeepList :: [term() | DeepList], 
       List :: [term()]. 
 
-my_flatten(L) when is_list(L) -> my_flatten(L,[]).
+my_flatten(L) when is_list(L) -> my_flatten(L, []).
 my_flatten([H|T], Acc) when is_list(H) -> 
-    my_flatten(T, Acc ++ my_flatten(H,[]));
+    my_flatten(T, Acc ++ my_flatten(H, []));
 my_flatten([H|T], Acc) -> my_flatten(T, Acc ++ [H]);
 my_flatten([], Acc) -> Acc.
 
