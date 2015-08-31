@@ -1863,6 +1863,19 @@ table1(Sym1, Sym2, Expr) ->
 			      Func(T, Result, ['and'|Stack], Func);
 			  'or' ->
 			      Func(T, Result, ['or'|Stack], Func);
+			  'xor' ->
+			      Func(T, Result, ['xor'|Stack], Func);
+			  atom ->
+			      case element(3,H) of
+				  nand ->
+				      Func(T, Result, ['nand'|Stack], Func);
+				  nor ->
+				      Func(T, Result, ['nor'|Stack], Func);
+				  impl ->
+				      Func(T, Result, ['impl'|Stack], Func);
+				  equ ->
+				      Func(T, Result, ['equ'|Stack], Func)
+			      end;
 			  var ->
 			      ResultNew = lists:append(Result,[element(3,H)]),
 			      Func(T, ResultNew, Stack, Func)
@@ -1882,6 +1895,16 @@ table1(Sym1, Sym2, Expr) ->
 		    Func(T, [b_and(N1,N2)|Stack], Env, Func);
 	       (['or'|T], [N1,N2|Stack], Env, Func) ->
 		    Func(T, [b_or(N1,N2)|Stack], Env, Func);
+	       (['nand'|T], [N1,N2|Stack], Env, Func) ->
+		    Func(T, [n_and(N1,N2)|Stack], Env, Func);
+	       (['nor'|T], [N1,N2|Stack], Env, Func) ->
+		    Func(T, [n_or(N1,N2)|Stack], Env, Func);
+	       (['xor'|T], [N1,N2|Stack], Env, Func) ->
+		    Func(T, [x_or(N1,N2)|Stack], Env, Func);
+	       (['impl'|T], [N1,N2|Stack], Env, Func) ->
+		    Func(T, [impl(N1,N2)|Stack], Env, Func);
+	       (['equ'|T], [N1,N2|Stack], Env, Func) ->
+		    Func(T, [equ(N1,N2)|Stack], Env, Func);
 	       ([Sym|T], Stack, Env, Func) ->
 		    {ok, Val} = orddict:find(Sym, Env),
 		    Func(T, [Val|Stack], Env, Func);
