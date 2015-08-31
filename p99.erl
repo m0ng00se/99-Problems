@@ -148,8 +148,6 @@
 -export([queens/1                    %% Problem 90
 ]).
 
--export([test/0]).
-
 %% ============= 
 %% Documentation
 %% ============= 
@@ -1844,40 +1842,79 @@ table(Expr) ->
 %%  fail true fail
 %%  fail fail fail
 %% ==============================================================================
-table1(_Sym1, _Sym2, Expr) ->
-    _Prefix = atom_to_list(?MODULE) ++ ":",
-    
-    _ParseAnd = fun(List) ->
-			case length(List) of
-			    1 -> hd(List);
-			    _ -> false
-		        end
-		end,
 
-    %% Evaluate the expression
-    Evaluate = fun(_A,_B) ->
-		       {ok, Tokens, _} = erl_scan:string(Expr),
-		       io:format("Tokens: ~p~n", [Tokens]),
-		       true
+%% 
+%% WORKING --> TODO, support more expression, and () on stack
+%%
+table1(Sym1, Sym2, Expr) ->
+    %% Unwind the expression stack
+    PopStack = fun([], Result, _Func) ->
+		       Result;
+		  ([H|T], Result, Func) ->
+		       Func(T, lists:append(Result,[H]), Func)
+	       end,
+
+    %% Stack the parsed tokens into post-fix order
+    PostFix = fun([], Result, Stack, _Func) ->
+		      PopStack(Stack, Result, PopStack);
+		 ([H|T], Result, Stack, Func) ->
+		      case element(1,H) of
+			  'and' ->
+			      Func(T, Result, ['and'|Stack], Func);
+			  'or' ->
+			      Func(T, Result, ['or'|Stack], Func);
+			  var ->
+			      ResultNew = lists:append(Result,[element(3,H)]),
+			      Func(T, ResultNew, Stack, Func)
+		      end
+	      end,
+    
+    %% Parse tokens into post-fix order
+    Parse = fun() ->
+		    {ok, Tokens, _} = erl_scan:string(Expr),
+		    PostFix(Tokens, [], [], PostFix)
+	    end,
+    
+    %% Apply the variable bindings to the expression
+    Apply = fun([], [Value], _Env, _Func) ->
+		    Value;
+	       (['and'|T], [N1,N2|Stack], Env, Func) ->
+		    Func(T, [b_and(N1,N2)|Stack], Env, Func);
+	       (['or'|T], [N1,N2|Stack], Env, Func) ->
+		    Func(T, [b_or(N1,N2)|Stack], Env, Func);
+	       ([Sym|T], Stack, Env, Func) ->
+		    {ok, Val} = orddict:find(Sym, Env),
+		    Func(T, [Val|Stack], Env, Func);
+	       (_, _Stack, _Env, _Func) ->
+		    error
+	    end,
+
+    %% Evaluate the expression by binding the argument variables
+    Evaluate = fun(Val1, Val2) ->
+		       %% Bind key-value pairs to the environment
+		       Env0 = orddict:new(),
+		       Env1 = orddict:store(Sym1, Val1, Env0),
+		       Env2 = orddict:store(Sym2, Val2, Env1),
+		       
+		       %% Parse tokens into post-fix order
+		       Tokens = Parse(),
+
+		       %% Apply bindings so we can evaluate expression
+		       Apply(Tokens, [], Env2, Apply)
 	       end,
 
     %% Print out the results
     Print = fun(A,B) ->
-		    
-		        io:format(" ~-8w ~-8w ~-8w~n", [A, B, Evaluate(A,B)])
+		    io:format(" ~-8w ~-8s ~-8s~n", [A, B, Evaluate(A,B)])
 	    end,
-    
-    %% Run through all possible combinations
+
     io:format("~nExpression: ~p~n~n", [Expr]),
+    io:format(" ~-8s ~-8s ~-8s~n", [atom_to_list(Sym1), atom_to_list(Sym2), Expr]),
     Print(true, true),
     Print(true, false),
     Print(false, true),
     Print(false, false),
     io:format("~n").
-    
-test() ->
-    Expr1 = "A and B",
-    table1('A', 'B', Expr1).
 
 %% =============================================================================
 %% @doc
