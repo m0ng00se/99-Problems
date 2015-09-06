@@ -1870,7 +1870,7 @@ table1(Sym1, Sym2, Expr) ->
 				     IndexA < IndexB
 			     end,
         
-    %% Unwind expression stack, stopping Op precedence is lower than stack head
+    %% Unwind expression stack, stopping when Op precedence is lower than stack head
     PopStack = fun([], Result, _Op, _Func) ->
 		       {Result, []};
 		  (['('|T], Result, ')', _Func) ->
@@ -1891,7 +1891,6 @@ table1(Sym1, Sym2, Expr) ->
 				       {Result,[H|T]}
 			       end;
 			   _ ->
-			       io:format("Adding: ~p~n", [H]),
 			       Func(T, lists:append(Result,[H]), Op, Func)
 		       end
 	       end,
