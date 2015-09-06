@@ -13,7 +13,7 @@
 -author('psholtz [at] gmail (dot) com').
 
 %%
-%% Remaining to do in Logic: P47, P48.
+%% Remaining to do in Logic: P48.
 %% Remaining to do in Binary Trees: P64B, P65, P66, P67, P68C.
 %% Remaining to do in Multiway Trees: P70, P72, P73.
 %%
@@ -85,6 +85,7 @@
 	 equ/2,
 	 table/1,
 	 table1/3,               %% Problem 47
+	 b_not/1,
 	 table2/1,               %% Problem 48
 	 gray/1,                 %% Problem 49
 	 gray_no_tail/1,
@@ -1843,51 +1844,105 @@ table(Expr) ->
 %%  fail fail fail
 %% ==============================================================================
 
-%% 
-%% WORKING --> TODO, support more expression, and () on stack
+%% To support the use cases above, we need a unary boolean "not" operator
+-spec b_not(A) -> B when A::boolean(), B::boolean().
+			  
+b_not(true) -> false;
+b_not(false) -> true.
+  
+%%
+%% Example Usage: A = 'A'. B = 'B'. p99:table(A, B, "A and B").
 %%
 table1(Sym1, Sym2, Expr) ->
-    %% Unwind the expression stack
-    PopStack = fun([], Result, _Func) ->
-		       Result;
-		  ([H|T], Result, Func) ->
-		       Func(T, lists:append(Result,[H]), Func)
+    %% List of boolean operators, sorted in order of precedence
+    Operators = ['not', 'xor', 'nand', 'and', 'nor', 'or', 'impl', 'equ', nil],
+
+    %% Return the index of "Item" in "List"
+    IndexOf = fun(_, [], _, _) -> not_found;
+		 (Item, [Item|_], Index, _) -> Index;
+		 (Item, [_|T], Index, Func) -> Func(Item, T, Index+1, Func)
+	      end,
+
+    %% Return 'true' if A is higher precedence than B
+    IsHigherPrecedenceThan = fun(A,B) ->
+				     IndexA = IndexOf(A, Operators, 0, IndexOf),
+				     IndexB = IndexOf(B, Operators, 0, IndexOf),
+				     IndexA < IndexB
+			     end,
+        
+    %% Unwind expression stack, stopping Op precedence is lower than stack head
+    PopStack = fun([], Result, _Op, _Func) ->
+		       {Result, []};
+		  (['('|T], Result, ')', _Func) ->
+		       {Result, T};
+		  (['('|T], Result, Op, Func) ->
+		       Func(T, Result, Op, Func);
+		  ([')'|T], Result, _Op, _Func) ->
+		       {Result, T};
+		  ([H|T], Result, ')', Func) ->
+		       Func(T, lists:append(Result,[H]), ')', Func);
+		  ([H|T], Result, Op, Func) ->
+		       case lists:member(H, Operators) of
+			   true ->
+			       case IsHigherPrecedenceThan(H, Op) of
+				   true ->
+				       Func(T, lists:append(Result,[H]), Op, Func);
+				   _ ->
+				       {Result,[H|T]}
+			       end;
+			   _ ->
+			       io:format("Adding: ~p~n", [H]),
+			       Func(T, lists:append(Result,[H]), Op, Func)
+		       end
 	       end,
 
+    %% Convenience procedure to handle popping the stack when we encounter an operator
+    ApplyOperator = fun(T, Op, Stack, Result, Func) ->
+			    {NewResult, NewStack} = PopStack(Stack, Result, Op, PopStack),
+			    Func(T, NewResult, [Op|NewStack], Func)
+		    end,
+    
     %% Stack the parsed tokens into post-fix order
     PostFix = fun([], Result, Stack, _Func) ->
-		      PopStack(Stack, Result, PopStack);
+		      {NewResult, _} = PopStack(Stack, Result, nil, PopStack),
+		      NewResult;
 		 ([H|T], Result, Stack, Func) ->
-		      case element(1,H) of
+		      case element(1,H) of 
+			  '(' ->
+			      Func(T, Result, ['('|Stack], Func);
+			  ')' ->
+			      ApplyOperator(T, ')', Stack, Result, Func);			      
 			  'and' ->
-			      Func(T, Result, ['and'|Stack], Func);
+			      ApplyOperator(T, 'and', Stack, Result, Func);
 			  'or' ->
-			      Func(T, Result, ['or'|Stack], Func);
+			      ApplyOperator(T, 'or', Stack, Result, Func);
 			  'xor' ->
-			      Func(T, Result, ['xor'|Stack], Func);
+			      ApplyOperator(T, 'xor', Stack, Result, Func);
+			  'not' ->
+			      ApplyOperator(T, 'not', Stack, Result, Func);
 			  atom ->
 			      case element(3,H) of
 				  nand ->
-				      Func(T, Result, ['nand'|Stack], Func);
+				      ApplyOperator(T, 'nand', Stack, Result, Func);
 				  nor ->
-				      Func(T, Result, ['nor'|Stack], Func);
+				      ApplyOperator(T, 'nor', Stack, Result, Func);
 				  impl ->
-				      Func(T, Result, ['impl'|Stack], Func);
+				      ApplyOperator(T, 'impl', Stack, Result, Func);
 				  equ ->
-				      Func(T, Result, ['equ'|Stack], Func)
+				      ApplyOperator(T, 'equ', Stack, Result, Func)
 			      end;
 			  var ->
 			      ResultNew = lists:append(Result,[element(3,H)]),
 			      Func(T, ResultNew, Stack, Func)
 		      end
 	      end,
-    
+
     %% Parse tokens into post-fix order
-    Parse = fun() ->
+    Parse = fun() -> 
 		    {ok, Tokens, _} = erl_scan:string(Expr),
 		    PostFix(Tokens, [], [], PostFix)
 	    end,
-    
+
     %% Apply the variable bindings to the expression
     Apply = fun([], [Value], _Env, _Func) ->
 		    Value;
@@ -1905,6 +1960,8 @@ table1(Sym1, Sym2, Expr) ->
 		    Func(T, [impl(N1,N2)|Stack], Env, Func);
 	       (['equ'|T], [N1,N2|Stack], Env, Func) ->
 		    Func(T, [equ(N1,N2)|Stack], Env, Func);
+	       (['not'|T], [N1|Stack], Env, Func) ->
+		    Func(T, [b_not(N1)|Stack], Env, Func);
 	       ([Sym|T], Stack, Env, Func) ->
 		    {ok, Val} = orddict:find(Sym, Env),
 		    Func(T, [Val|Stack], Env, Func);
@@ -1914,11 +1971,11 @@ table1(Sym1, Sym2, Expr) ->
 
     %% Evaluate the expression by binding the argument variables
     Evaluate = fun(Val1, Val2) ->
-		       %% Bind key-value pairs to the environment
+		       %% Bind key-value pairs to the\ environment
 		       Env0 = orddict:new(),
 		       Env1 = orddict:store(Sym1, Val1, Env0),
 		       Env2 = orddict:store(Sym2, Val2, Env1),
-		       
+
 		       %% Parse tokens into post-fix order
 		       Tokens = Parse(),
 
@@ -1932,7 +1989,7 @@ table1(Sym1, Sym2, Expr) ->
 	    end,
 
     io:format("~nExpression: ~p~n~n", [Expr]),
-    io:format(" ~-8s ~-8s ~-8s~n", [atom_to_list(Sym1), atom_to_list(Sym2), Expr]),
+    io:format(" ~-8s ~-8s ~-16s~n", [atom_to_list(Sym1), atom_to_list(Sym2), Expr]),
     Print(true, true),
     Print(true, false),
     Print(false, true),
