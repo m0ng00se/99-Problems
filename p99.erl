@@ -1849,13 +1849,18 @@ table(Expr) ->
 			  
 b_not(true) -> false;
 b_not(false) -> true.
-  
+
 %%
 %% Example Usage: A = 'A'. B = 'B'. p99:table(A, B, "A and B").
 %%
+-spec table1(A, B, Expr) -> no_return() when
+      A :: term(),
+      B :: term(),
+      Expr :: [term()].
+
 table1(Sym1, Sym2, Expr) ->
     %% List of boolean operators, sorted in order of precedence
-    Operators = ['not', 'xor', 'nand', 'and', 'nor', 'or', 'impl', 'equ', nil],
+    Operators = ['not', 'xor', 'nand', 'and', 'nor', 'or', 'impl', 'equ'],
 
     %% Return the index of "Item" in "List"
     IndexOf = fun(_, [], _, _) -> not_found;
@@ -1869,74 +1874,95 @@ table1(Sym1, Sym2, Expr) ->
 				     IndexB = IndexOf(B, Operators, 0, IndexOf),
 				     IndexA < IndexB
 			     end,
-        
-    %% Unwind expression stack, stopping when Op precedence is lower than stack head
-    PopStack = fun([], Result, _Op, _Func) ->
-		       {Result, []};
-		  (['('|T], Result, ')', _Func) ->
-		       {Result, T};
-		  (['('|T], Result, Op, Func) ->
-		       Func(T, Result, Op, Func);
-		  ([')'|T], Result, _Op, _Func) ->
-		       {Result, T};
-		  ([H|T], Result, ')', Func) ->
-		       Func(T, lists:append(Result,[H]), ')', Func);
-		  ([H|T], Result, Op, Func) ->
-		       case lists:member(H, Operators) of
-			   true ->
-			       case IsHigherPrecedenceThan(H, Op) of
-				   true ->
-				       Func(T, lists:append(Result,[H]), Op, Func);
-				   _ ->
-				       {Result,[H|T]}
-			       end;
-			   _ ->
-			       Func(T, lists:append(Result,[H]), Op, Func)
-		       end
-	       end,
+            
+    %% Pop the stack, moving the top element over to the
+    %% result string, until we hit the argument token.
+    PopStackToToken = fun(Result, [], _Token, _Func) ->
+			      {Result, []};
+			 (Result, [H|T], Token, Func) ->
+			      case H of
+				  Token ->
+				      {Result, lists:reverse(T)};
+				  _ ->
+				      Func(Result, T, Token, Func)
+			      end
+		      end,
 
-    %% Convenience procedure to handle popping the stack when we encounter an operator
-    ApplyOperator = fun(T, Op, Stack, Result, Func) ->
-			    {NewResult, NewStack} = PopStack(Stack, Result, Op, PopStack),
-			    Func(T, NewResult, [Op|NewStack], Func)
-		    end,
-    
-    %% Stack the parsed tokens into post-fix order
-    PostFix = fun([], Result, Stack, _Func) ->
-		      {NewResult, _} = PopStack(Stack, Result, nil, PopStack),
-		      NewResult;
+    %% Fully pop the stack, moving the remaining elements over to the result string
+    PopStackFull = fun(Result, [], _Func) ->
+			   Result;
+		      (Result, [H|T], Func) ->
+			   Func(lists:append(Result, [H]), T, Func)
+		   end,
+
+    %% Move down the stack, popping all operators that have the same or higher precedence 
+    %% than the argument token. Stop when we hit an operator that is of lower precedence.
+    PopStackWithToken = fun(Result, [], Token, _Func) ->
+				{Result, [Token]};
+			   (Result, [H|T], Token, Func) ->
+				case IsHigherPrecedenceThan(H, Token) of
+				    true ->
+					NewResult = lists:append(Result, [H]),
+					Func(NewResult, T, Token, Func);
+				    _ ->
+					NewStack = lists:append([H|T], [Token]),
+					{Result, lists:reverse(NewStack)}
+				end
+			end,
+
+    %% Function is invoked with:
+    %%  (1) Tokens;
+    %%  (2) Result string (in post-fix order);
+    %%  (3) Stack (for operators);
+    %%  (4) Function (for recursion);
+    PostFix = fun([], Result, [], _Func) ->
+		      Result;
+		 ([], Result, Stack, _Func) ->
+		      PopStackFull(Result, Stack, PopStackFull);
 		 ([H|T], Result, Stack, Func) ->
-		      case element(1,H) of 
+		      case element(1,H) of
+			  var ->
+			      NewResult = lists:append(Result, [element(3,H)]),
+			      Func(T, NewResult, Stack, Func);
 			  '(' ->
-			      Func(T, Result, ['('|Stack], Func);
+			      NewStack = lists:append(Stack, ['(']),
+			      Func(T, Result, NewStack, Func);
 			  ')' ->
-			      ApplyOperator(T, ')', Stack, Result, Func);			      
+			      {NewResult, NewStack} = PopStackToToken(Result, lists:reverse(Stack), '(', PopStackToToken),
+			      Func(T, NewResult, NewStack, Func);
 			  'and' ->
-			      ApplyOperator(T, 'and', Stack, Result, Func);
+			      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'and', PopStackWithToken),
+			      Func(T, NewResult, NewStack, Func);
 			  'or' ->
-			      ApplyOperator(T, 'or', Stack, Result, Func);
+			      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'or', PopStackWithToken),
+			      Func(T, NewResult, NewStack, Func);
 			  'xor' ->
-			      ApplyOperator(T, 'xor', Stack, Result, Func);
+			      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'xor', PopStackWithToken),
+			      Func(T, NewResult, NewStack, Func);
 			  'not' ->
-			      ApplyOperator(T, 'not', Stack, Result, Func);
+			      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'not', PopStackWithToken),
+			      Func(T, NewResult, NewStack, Func);
 			  atom ->
 			      case element(3,H) of
 				  nand ->
-				      ApplyOperator(T, 'nand', Stack, Result, Func);
+				      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'nand', PopStackWithToken),
+				      Func(T, NewResult, NewStack, Func);
 				  nor ->
-				      ApplyOperator(T, 'nor', Stack, Result, Func);
+				      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'nor', PopStackWithToken),
+				      Func(T, NewResult, NewStack, Func);
 				  impl ->
-				      ApplyOperator(T, 'impl', Stack, Result, Func);
+				      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'impl', PopStackWithToken),
+				      Func(T, NewResult, NewStack, Func);
 				  equ ->
-				      ApplyOperator(T, 'equ', Stack, Result, Func)
+				      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'equ', PopStackWithToken),
+				      Func(T, NewResult, NewStack, Func)
 			      end;
-			  var ->
-			      ResultNew = lists:append(Result,[element(3,H)]),
-			      Func(T, ResultNew, Stack, Func)
+			  _ ->
+			      io:format("Error parsing tokens: ~p~n", [[H|T]])
 		      end
 	      end,
-
-    %% Parse tokens into post-fix order
+    
+    %% Return a list of parsed tokens, arranged in post-fix order
     Parse = fun() -> 
 		    {ok, Tokens, _} = erl_scan:string(Expr),
 		    PostFix(Tokens, [], [], PostFix)
@@ -1970,7 +1996,7 @@ table1(Sym1, Sym2, Expr) ->
 
     %% Evaluate the expression by binding the argument variables
     Evaluate = fun(Val1, Val2) ->
-		       %% Bind key-value pairs to the\ environment
+		       %% Bind key-value pairs to the environment
 		       Env0 = orddict:new(),
 		       Env1 = orddict:store(Sym1, Val1, Env0),
 		       Env2 = orddict:store(Sym2, Val2, Env1),
@@ -1988,7 +2014,7 @@ table1(Sym1, Sym2, Expr) ->
 	    end,
 
     io:format("~nExpression: ~p~n~n", [Expr]),
-    io:format(" ~-8s ~-8s ~-16s~n", [atom_to_list(Sym1), atom_to_list(Sym2), Expr]),
+    io:format(" ~-8s ~-8s ~-32s~n", [atom_to_list(Sym1), atom_to_list(Sym2), Expr]),
     Print(true, true),
     Print(true, false),
     Print(false, true),
