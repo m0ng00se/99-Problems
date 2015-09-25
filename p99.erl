@@ -86,7 +86,7 @@
 	 table/1,
 	 table1/3,               %% Problem 47
 	 b_not/1,
-	 table2/1,               %% Problem 48
+	 table2/2,               %% Problem 48
 	 gray/1,                 %% Problem 49
 	 gray_no_tail/1,
 	 gray_imp/1,
@@ -1851,6 +1851,190 @@ b_not(true) -> false;
 b_not(false) -> true.
 
 %%
+%% The following helper functions and data structures are required 
+%% to support P47 and P48:
+%%
+    
+%% List of boolean operators, sorted in order of precedence:
+-spec logic_operators() -> [term()].
+
+logic_operators() -> ['not', 'xor', 'nand', 'and', 'nor', 'or', 'impl', 'equ'].
+
+%% Return 'true' if A is higher precedence than B
+-spec is_higher_precedence_than(A,B) -> boolean() when 
+      A :: atom(),
+      B :: atom().
+
+is_higher_precedence_than(A,B) ->
+    %% Return the index of "item" in "List"
+    IndexOf = fun(_, [], _, _) -> not_found;
+		 (Item, [Item|_], Index, _) -> Index;
+		 (Item, [_|T], Index, Func) -> Func(Item, T, Index+1, Func)
+	      end,
+
+    IndexA = IndexOf(A, logic_operators(), 0, IndexOf),
+    IndexB = IndexOf(B, logic_operators(), 0, IndexOf),
+    IndexA < IndexB.
+	
+%%	      
+%% Pop the stack, moving the top element to the result string, 
+%% until we hit the argument token.
+%%
+-spec pop_stack_to_token(Result, Stack, Token, Func) -> {ResultPopped, StackPopped} when
+      Result :: [term()],
+      Stack :: [term()],
+      Token :: term(),
+      Func :: fun(),
+      ResultPopped :: [term()],
+      StackPopped :: [term()].
+
+pop_stack_to_token(Result, [], _Token, _Func) ->
+    {Result, []};
+pop_stack_to_token(Result, [H|T], Token, Func) ->
+    case H of
+	Token ->
+	    {Result, lists:reverse(T)};
+	_ ->
+	    Func(Result, T, Token, Func)
+    end.
+
+%% Fully pop the stack, moving the remaining elements over to the result string
+-spec pop_stack_full(Result, Stack, Func) -> ResultPopped when
+      Result :: [term()],
+      Stack :: [term()],
+      Func :: fun(),
+      ResultPopped :: [term()].
+
+pop_stack_full(Result, [], _Func) ->
+    Result;
+pop_stack_full(Result, [H|T], Func) ->
+    Func(lists:append(Result, [H]), T, Func).
+
+%%
+%% Move down the stack, popping all operators that have the same or higher precedence
+%% than the argument token. Stop when we hit an operator that is of lower precedence.
+%%
+-spec pop_stack_with_token(Result, Stack, Token, Func) -> {ResultPopped, StackPopped} when
+      Result :: [term()],
+      Stack :: [term()],
+      Token :: term(),
+      Func :: fun(),
+      ResultPopped :: [term()],
+      StackPopped :: [term()].
+
+pop_stack_with_token(Result, [], Token, _Func) ->
+    {Result, [Token]};
+pop_stack_with_token(Result, [H|T], Token, Func) ->
+    case is_higher_precedence_than(H, Token) of
+	true ->
+	    NewResult = lists:append(Result, [H]),
+	    Func(NewResult, T, Token, Func);
+	_ ->
+	    NewStack = lists:append([H|T], [Token]),
+	    {Result, lists:reverse(NewStack)}
+    end.
+
+%%
+%% Function is invoked with:
+%%  (1) Tokens;
+%%  (2) Result string (in post-fix order);
+%%  (3) Stack (for operators);
+%%  (4) Function (for recursion);
+%%
+-spec post_fix(Tokens, Result, Stack, Func) -> PostFixResult when
+      Tokens :: [term()],
+      Result :: [term()],
+      Stack :: [term()],
+      Func :: fun(),
+      PostFixResult :: [term()].
+
+post_fix([], Result, [], _Func) ->
+    Result;
+post_fix([], Result, Stack, _Func) ->
+    pop_stack_full(Result, Stack, fun pop_stack_full/3);
+post_fix([H|T], Result, Stack, Func) ->
+    case element(1,H) of
+	var ->
+	    NewResult = lists:append(Result, [element(3,H)]),
+	    Func(T, NewResult, Stack, Func);
+	'(' ->
+	    NewStack = lists:append(Stack, ['(']),
+	    Func(T, Result, NewStack, Func);
+	')' ->
+	    {NewResult, NewStack} = pop_stack_to_token(Result, lists:reverse(Stack), '(', pop_stack_to_token),
+	    Func(T, NewResult, NewStack, Func);
+	'and' ->
+	    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'and', fun pop_stack_with_token/4),
+	    Func(T, NewResult, NewStack, Func);
+	'or' ->
+	    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'or', fun pop_stack_with_token/4),
+	    Func(T, NewResult, NewStack, Func);
+	'xor' ->
+	    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'xor', fun pop_stack_with_token/4),
+	    Func(T, NewResult, NewStack, Func);
+	'not' ->
+	    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'not', fun pop_stack_with_token/4),
+	    Func(T, NewResult, NewStack, Func);
+	atom ->
+	    case element(3,H) of
+		nand ->
+		    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'nand', fun pop_stack_with_token/4),
+		    Func(T, NewResult, NewStack, Func);
+		nor ->
+		    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'nor', fun pop_stack_with_token/4),
+		    Func(T, NewResult, NewStack, Func);
+		impl ->
+		    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'impl', fun pop_stack_with_token/4),
+		    Func(T, NewResult, NewStack, Func);
+		equ ->
+		    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'equ', fun pop_stack_with_token/4),
+		    Func(T, NewResult, NewStack, Func)
+	    end;
+	_ ->
+	    io:format("Error parsing tokens: ~p~n", [[H|T]])
+    end.
+
+%% Return a list of parsed tokens, arranged in post-fix order
+-spec parse(Expr) -> Tokens when
+      Expr :: [term()],
+      Tokens :: [term()].
+
+parse(Expr) ->
+    {ok, Tokens, _} = erl_scan:string(Expr),
+    post_fix(Tokens, [], [], fun post_fix/4).
+
+%% Apply the variable bindings to the expression
+-spec logic_apply(Tokens, Stack, Env, Func) -> boolean() when
+      Tokens :: [term()],
+      Stack :: [term()],
+      Env :: {term()},
+      Func :: fun().
+
+logic_apply([], [Value], _Env, _Func) ->
+    Value;
+logic_apply(['and'|T], [N1,N2|Stack], Env, Func) ->
+    Func(T, [b_and(N1,N2)|Stack], Env, Func);
+logic_apply(['or'|T], [N1,N2|Stack], Env, Func) ->
+    Func(T, [b_or(N1,N2)|Stack], Env, Func);
+logic_apply(['nand'|T], [N1,N2|Stack], Env, Func) ->
+    Func(T, [n_and(N1,N2)|Stack], Env, Func);
+logic_apply(['nor'|T], [N1,N2|Stack], Env, Func) ->
+    Func(T, [n_or(N1,N2)|Stack], Env, Func);
+logic_apply(['xor'|T], [N1,N2|Stack], Env, Func) ->
+    Func(T, [x_or(N1,N2)|Stack], Env, Func);
+logic_apply(['impl'|T], [N1,N2|Stack], Env, Func) ->
+    Func(T, [impl(N1,N2)|Stack], Env, Func);
+logic_apply(['equ'|T], [N1,N2|Stack], Env, Func) ->
+    Func(T, [equ(N1,N2)|Stack], Env, Func);
+logic_apply(['not'|T], [N1|Stack], Env, Func) ->
+    Func(T, [b_not(N1)|Stack], Env, Func);
+logic_apply([Sym|T], Stack, Env, Func) ->
+    {ok, Val} = orddict:find(Sym, Env),
+    Func(T, [Val|Stack], Env, Func);
+logic_apply(_, _Stack, _Env, _Func) ->
+    error.
+
+%%
 %% Example Usage: A = 'A'. B = 'B'. p99:table(A, B, "A and B").
 %%
 -spec table1(A, B, Expr) -> no_return() when
@@ -1858,141 +2042,7 @@ b_not(false) -> true.
       B :: term(),
       Expr :: [term()].
 
-table1(Sym1, Sym2, Expr) ->
-    %% List of boolean operators, sorted in order of precedence
-    Operators = ['not', 'xor', 'nand', 'and', 'nor', 'or', 'impl', 'equ'],
-
-    %% Return the index of "Item" in "List"
-    IndexOf = fun(_, [], _, _) -> not_found;
-		 (Item, [Item|_], Index, _) -> Index;
-		 (Item, [_|T], Index, Func) -> Func(Item, T, Index+1, Func)
-	      end,
-
-    %% Return 'true' if A is higher precedence than B
-    IsHigherPrecedenceThan = fun(A,B) ->
-				     IndexA = IndexOf(A, Operators, 0, IndexOf),
-				     IndexB = IndexOf(B, Operators, 0, IndexOf),
-				     IndexA < IndexB
-			     end,
-            
-    %% Pop the stack, moving the top element over to the
-    %% result string, until we hit the argument token.
-    PopStackToToken = fun(Result, [], _Token, _Func) ->
-			      {Result, []};
-			 (Result, [H|T], Token, Func) ->
-			      case H of
-				  Token ->
-				      {Result, lists:reverse(T)};
-				  _ ->
-				      Func(Result, T, Token, Func)
-			      end
-		      end,
-
-    %% Fully pop the stack, moving the remaining elements over to the result string
-    PopStackFull = fun(Result, [], _Func) ->
-			   Result;
-		      (Result, [H|T], Func) ->
-			   Func(lists:append(Result, [H]), T, Func)
-		   end,
-
-    %% Move down the stack, popping all operators that have the same or higher precedence 
-    %% than the argument token. Stop when we hit an operator that is of lower precedence.
-    PopStackWithToken = fun(Result, [], Token, _Func) ->
-				{Result, [Token]};
-			   (Result, [H|T], Token, Func) ->
-				case IsHigherPrecedenceThan(H, Token) of
-				    true ->
-					NewResult = lists:append(Result, [H]),
-					Func(NewResult, T, Token, Func);
-				    _ ->
-					NewStack = lists:append([H|T], [Token]),
-					{Result, lists:reverse(NewStack)}
-				end
-			end,
-
-    %% Function is invoked with:
-    %%  (1) Tokens;
-    %%  (2) Result string (in post-fix order);
-    %%  (3) Stack (for operators);
-    %%  (4) Function (for recursion);
-    PostFix = fun([], Result, [], _Func) ->
-		      Result;
-		 ([], Result, Stack, _Func) ->
-		      PopStackFull(Result, Stack, PopStackFull);
-		 ([H|T], Result, Stack, Func) ->
-		      case element(1,H) of
-			  var ->
-			      NewResult = lists:append(Result, [element(3,H)]),
-			      Func(T, NewResult, Stack, Func);
-			  '(' ->
-			      NewStack = lists:append(Stack, ['(']),
-			      Func(T, Result, NewStack, Func);
-			  ')' ->
-			      {NewResult, NewStack} = PopStackToToken(Result, lists:reverse(Stack), '(', PopStackToToken),
-			      Func(T, NewResult, NewStack, Func);
-			  'and' ->
-			      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'and', PopStackWithToken),
-			      Func(T, NewResult, NewStack, Func);
-			  'or' ->
-			      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'or', PopStackWithToken),
-			      Func(T, NewResult, NewStack, Func);
-			  'xor' ->
-			      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'xor', PopStackWithToken),
-			      Func(T, NewResult, NewStack, Func);
-			  'not' ->
-			      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'not', PopStackWithToken),
-			      Func(T, NewResult, NewStack, Func);
-			  atom ->
-			      case element(3,H) of
-				  nand ->
-				      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'nand', PopStackWithToken),
-				      Func(T, NewResult, NewStack, Func);
-				  nor ->
-				      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'nor', PopStackWithToken),
-				      Func(T, NewResult, NewStack, Func);
-				  impl ->
-				      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'impl', PopStackWithToken),
-				      Func(T, NewResult, NewStack, Func);
-				  equ ->
-				      {NewResult, NewStack} = PopStackWithToken(Result, lists:reverse(Stack), 'equ', PopStackWithToken),
-				      Func(T, NewResult, NewStack, Func)
-			      end;
-			  _ ->
-			      io:format("Error parsing tokens: ~p~n", [[H|T]])
-		      end
-	      end,
-    
-    %% Return a list of parsed tokens, arranged in post-fix order
-    Parse = fun() -> 
-		    {ok, Tokens, _} = erl_scan:string(Expr),
-		    PostFix(Tokens, [], [], PostFix)
-	    end,
-
-    %% Apply the variable bindings to the expression
-    Apply = fun([], [Value], _Env, _Func) ->
-		    Value;
-	       (['and'|T], [N1,N2|Stack], Env, Func) ->
-		    Func(T, [b_and(N1,N2)|Stack], Env, Func);
-	       (['or'|T], [N1,N2|Stack], Env, Func) ->
-		    Func(T, [b_or(N1,N2)|Stack], Env, Func);
-	       (['nand'|T], [N1,N2|Stack], Env, Func) ->
-		    Func(T, [n_and(N1,N2)|Stack], Env, Func);
-	       (['nor'|T], [N1,N2|Stack], Env, Func) ->
-		    Func(T, [n_or(N1,N2)|Stack], Env, Func);
-	       (['xor'|T], [N1,N2|Stack], Env, Func) ->
-		    Func(T, [x_or(N1,N2)|Stack], Env, Func);
-	       (['impl'|T], [N1,N2|Stack], Env, Func) ->
-		    Func(T, [impl(N1,N2)|Stack], Env, Func);
-	       (['equ'|T], [N1,N2|Stack], Env, Func) ->
-		    Func(T, [equ(N1,N2)|Stack], Env, Func);
-	       (['not'|T], [N1|Stack], Env, Func) ->
-		    Func(T, [b_not(N1)|Stack], Env, Func);
-	       ([Sym|T], Stack, Env, Func) ->
-		    {ok, Val} = orddict:find(Sym, Env),
-		    Func(T, [Val|Stack], Env, Func);
-	       (_, _Stack, _Env, _Func) ->
-		    error
-	    end,
+table1(Sym1, Sym2, Expr) ->    
 
     %% Evaluate the expression by binding the argument variables
     Evaluate = fun(Val1, Val2) ->
@@ -2002,10 +2052,10 @@ table1(Sym1, Sym2, Expr) ->
 		       Env2 = orddict:store(Sym2, Val2, Env1),
 
 		       %% Parse tokens into post-fix order
-		       Tokens = Parse(),
+		       Tokens = parse(Expr),
 
 		       %% Apply bindings so we can evaluate expression
-		       Apply(Tokens, [], Env2, Apply)
+		       logic_apply(Tokens, [], Env2, fun logic_apply/4)
 	       end,
 
     %% Print out the results
@@ -2043,8 +2093,69 @@ table1(Sym1, Sym2, Expr) ->
 %%  fail fail true true
 %%  fail fail fail true
 %% =============================================================================
-table2(_Expr) ->
-    ok.
+
+%% 
+%% Example Usage:
+%%
+%%  A = 'A'.
+%%  B = 'B'.
+%%  C = 'C'.
+%%  L = [A,B,C].
+%%  Expr = "A and (B or C)".
+%%  p99:table2(L, Expr).
+%%
+-spec table2(List, Expr) -> no_return() when
+      List :: [term()],
+      Expr :: [term()].
+
+table2(List, Expr) ->
+    Evaluate = fun(Data) ->
+		       %% Iteratively generate the variable bindings
+		       EnvIter = fun(Env, N, N, _Func) ->
+					      orddict:store(lists:nth(N, List), lists:nth(N, Data), Env);
+					 (Env, N, Length, Func) ->
+					      EnvNew = orddict:store(lists:nth(N, List), lists:nth(N, Data), Env),
+					      Func(EnvNew, N+1, Length, Func)
+				      end,
+		       Env = EnvIter(orddict:new(),1,length(Data), EnvIter),
+		       
+		       %% Parse tokens into post-fix order
+		       Tokens = parse(Expr),
+		       
+		       %% Apply bindings so we can evaluate expression
+		       logic_apply(Tokens, [], Env, fun logic_apply/4)
+	       end,
+
+    %% Print and process the list of truth symbols
+    PrintList = fun(Data, N, N, _Func) ->
+			Value = Evaluate(Data),
+			io:format("~-8s ~-8s~n", [lists:nth(N, Data), Value]);
+		   (Data, N, Length, Func) ->
+			io:format("~-8s ", [lists:nth(N, Data)]),
+			Func(Data, N+1, Length, Func)
+		end,
+    
+    %% Generate all the true/false combinations of length N
+    Combinations = fun(0, Acc, _Func) ->
+			   PrintList(Acc, 1, length(Acc), PrintList);
+		      (N, Acc, Func) ->
+			   NewAcc1 = lists:append(Acc,[true]),   
+			   Func(N-1, NewAcc1, Func),
+			   NewAcc0 = lists:append(Acc,[false]),
+			   Func(N-1, NewAcc0, Func)
+		   end,
+    
+    %% Print the header for the logic table
+    PrintHeader = fun([], _Func) ->
+			  io:format("~-32s~n", [Expr]);
+		     ([H|T], Func) ->
+			  io:format("~-8s ", [H]),
+			  Func(T, Func)
+		  end,
+
+    io:format("~nExpression: ~p~n~n", [Expr]),
+    PrintHeader(List, PrintHeader),
+    Combinations(length(List), [], Combinations).
 
 %% ============================================================================
 %% @doc
