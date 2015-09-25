@@ -13,7 +13,6 @@
 -author('psholtz [at] gmail (dot) com').
 
 %%
-%% Remaining to do in Logic: P48.
 %% Remaining to do in Binary Trees: P64B, P65, P66, P67, P68C.
 %% Remaining to do in Multiway Trees: P70, P72, P73.
 %%
