@@ -1892,9 +1892,9 @@ pop_stack_to_token(Result, [], _Token, _Func) ->
 pop_stack_to_token(Result, [H|T], Token, Func) ->
     case H of
 	Token ->
-	    {Result, lists:reverse(T)};
+	    {Result, T};
 	_ ->
-	    Func(Result, T, Token, Func)
+	    Func(lists:append(Result, [H]), T, Token, Func)
     end.
 
 %% Fully pop the stack, moving the remaining elements over to the result string
@@ -1929,8 +1929,8 @@ pop_stack_with_token(Result, [H|T], Token, Func) ->
 	    NewResult = lists:append(Result, [H]),
 	    Func(NewResult, T, Token, Func);
 	_ ->
-	    NewStack = lists:append([H|T], [Token]),
-	    {Result, lists:reverse(NewStack)}
+	    NewStack = lists:append([Token], [H|T]),
+	    {Result, NewStack}
     end.
 
 %%
@@ -1957,36 +1957,36 @@ post_fix([H|T], Result, Stack, Func) ->
 	    NewResult = lists:append(Result, [element(3,H)]),
 	    Func(T, NewResult, Stack, Func);
 	'(' ->
-	    NewStack = lists:append(Stack, ['(']),
+	    NewStack = lists:append(['('], Stack),
 	    Func(T, Result, NewStack, Func);
 	')' ->
-	    {NewResult, NewStack} = pop_stack_to_token(Result, lists:reverse(Stack), '(', pop_stack_to_token),
+	    {NewResult, NewStack} = pop_stack_to_token(Result, Stack, '(', fun pop_stack_to_token/4),
 	    Func(T, NewResult, NewStack, Func);
 	'and' ->
-	    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'and', fun pop_stack_with_token/4),
+	    {NewResult, NewStack} = pop_stack_with_token(Result, Stack, 'and', fun pop_stack_with_token/4),
 	    Func(T, NewResult, NewStack, Func);
 	'or' ->
-	    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'or', fun pop_stack_with_token/4),
+	    {NewResult, NewStack} = pop_stack_with_token(Result, Stack, 'or', fun pop_stack_with_token/4),
 	    Func(T, NewResult, NewStack, Func);
 	'xor' ->
-	    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'xor', fun pop_stack_with_token/4),
+	    {NewResult, NewStack} = pop_stack_with_token(Result, Stack, 'xor', fun pop_stack_with_token/4),
 	    Func(T, NewResult, NewStack, Func);
 	'not' ->
-	    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'not', fun pop_stack_with_token/4),
+	    {NewResult, NewStack} = pop_stack_with_token(Result, Stack, 'not', fun pop_stack_with_token/4),
 	    Func(T, NewResult, NewStack, Func);
 	atom ->
 	    case element(3,H) of
 		nand ->
-		    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'nand', fun pop_stack_with_token/4),
+		    {NewResult, NewStack} = pop_stack_with_token(Result, Stack, 'nand', fun pop_stack_with_token/4),
 		    Func(T, NewResult, NewStack, Func);
 		nor ->
-		    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'nor', fun pop_stack_with_token/4),
+		    {NewResult, NewStack} = pop_stack_with_token(Result, Stack, 'nor', fun pop_stack_with_token/4),
 		    Func(T, NewResult, NewStack, Func);
 		impl ->
-		    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'impl', fun pop_stack_with_token/4),
+		    {NewResult, NewStack} = pop_stack_with_token(Result, Stack, 'impl', fun pop_stack_with_token/4),
 		    Func(T, NewResult, NewStack, Func);
 		equ ->
-		    {NewResult, NewStack} = pop_stack_with_token(Result, lists:reverse(Stack), 'equ', fun pop_stack_with_token/4),
+		    {NewResult, NewStack} = pop_stack_with_token(Result, Stack, 'equ', fun pop_stack_with_token/4),
 		    Func(T, NewResult, NewStack, Func)
 	    end;
 	_ ->
@@ -2116,7 +2116,7 @@ table2(List, Expr) ->
 					      EnvNew = orddict:store(lists:nth(N, List), lists:nth(N, Data), Env),
 					      Func(EnvNew, N+1, Length, Func)
 				      end,
-		       Env = EnvIter(orddict:new(),1,length(Data), EnvIter),
+		       Env = EnvIter(orddict:new(), 1, length(Data), EnvIter),
 		       
 		       %% Parse tokens into post-fix order
 		       Tokens = parse(Expr),
