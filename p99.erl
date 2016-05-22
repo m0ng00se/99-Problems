@@ -1519,12 +1519,12 @@ prime_number_list(Low, High) when
 -spec goldbach(N) -> tuple() when 
       N :: pos_integer().
 
-goldbach(N) when is_integer(N), N > 2, N rem 2 =:=0 ->
+goldbach(N) when is_integer(N), N > 2, N rem 2 =:= 0 ->
     Primes = prime_number_list(2, N div 2),
     GoldbachIter = fun([], _) -> [];
 		      ([H|T], Func) ->
 			   case {is_prime(H), is_prime(N-H)} of
-			       {true, true} -> {H,N-H};
+			       {true, true} -> {H, N-H};
 			       _  -> Func(T, Func)
                            end
 		   end,
