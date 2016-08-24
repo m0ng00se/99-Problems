@@ -209,7 +209,7 @@
 %% @end
 %%
 %% Example:
-%% > (my-list '(a b c d))
+%% > (my-last '(a b c d))
 %% > (d)
 %%
 %% CHEAT: lists:last/1
